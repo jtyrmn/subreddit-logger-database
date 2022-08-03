@@ -1,0 +1,84 @@
+/*
+    this file is the API contract that all services using
+    subreddit-logger-database will share (they will all use
+    this same file for code gen)
+*/
+
+syntax="proto3";
+
+option go_package="../pb";
+
+service ListingsDatabase {
+
+    /*
+        the "save listings" protocol sends an unconstrained amount of newly 
+        discovered listings to the database to be saved.
+    */
+    rpc SaveListings (stream RedditContent) returns (SaveListingsResponse) {}
+
+    /*
+        the "update listings" protocol updates the records of pre-existing 
+        listings in the database
+    */
+    rpc UpdateListings (stream RedditContent) returns  (UpdateListingsResponse) {}
+
+    /*
+        the "cull listings" protocol deletes all listings in the database at are
+        over a certain age
+    */
+    rpc CullListings (CullListingsRequest) returns (CullListingsRequest) {}
+
+    /*
+        pulls a limited amount of listings, usually for display on a web-page.
+        Sorting method and other factors that choose the specific items are 
+        arbitrary as of writing this comment
+    */
+    rpc ManyListings (ManyListingsRequest) returns (ManyListingsResponse) {}
+
+}
+
+// A listing object that's stored in + returned from the database. 
+message RedditContent {
+    message MetaData {
+        string contenttype = 1;
+        string id = 2;
+
+        string title = 3;
+        uint32 upvotes = 4;
+        uint32 comments = 5;
+        
+        uint64 dateCreated = 6;
+        uint64 dateQueried = 7;
+    }
+
+    message ListingEntry {
+        uint32 upvotes = 1;
+        uint32 comments = 2;
+        
+        uint64 dateQueried = 3;
+    }
+
+    string id = 1;
+    MetaData metaData = 2;
+    repeated ListingEntry entries = 3;
+}
+
+message SaveListingsResponse {}
+
+message UpdateListingsResponse {}
+
+message CullListingsRequest {
+    uint64 maxAge = 1;
+}
+message CullListingsResponse {
+    uint32 numDeleted = 1;
+}
+
+message ManyListingsRequest {
+    uint32 limit = 1; // this value shouldn't be too high
+    uint32 skip = 2; // for pagination. # of listings to skip over
+}
+
+message ManyListingsResponse {
+    repeated RedditContent listings = 1;
+}
