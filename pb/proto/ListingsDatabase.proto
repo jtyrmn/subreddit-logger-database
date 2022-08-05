@@ -40,26 +40,26 @@ service ListingsDatabase {
 // A listing object that's stored in + returned from the database. 
 message RedditContent {
     message MetaData {
-        string contenttype = 1;
-        string id = 2;
+        string content_type = 1 [json_name="contenttype"];
+        string id = 2  [json_name="id"];
 
         string title = 3;
         uint32 upvotes = 4;
         uint32 comments = 5;
         
-        uint64 dateCreated = 6;
-        uint64 dateQueried = 7;
+        uint64 date_created = 6 [json_name="date"];
+        uint64 date_queried = 7 [json_name="querydate"];
     }
 
     message ListingEntry {
         uint32 upvotes = 1;
         uint32 comments = 2;
         
-        uint64 dateQueried = 3;
+        uint64 date_queried = 3 [json_name="date"];
     }
 
-    string id = 1;
-    MetaData metaData = 2;
+    string id = 1 [json_name="_id"];
+    MetaData meta_data = 2 [json_name="listing"];
     repeated ListingEntry entries = 3;
 }
 
@@ -68,10 +68,10 @@ message SaveListingsResponse {}
 message UpdateListingsResponse {}
 
 message CullListingsRequest {
-    uint64 maxAge = 1;
+    uint64 max_age = 1;
 }
 message CullListingsResponse {
-    uint32 numDeleted = 1;
+    uint32 num_deleted = 1;
 }
 
 message ManyListingsRequest {
@@ -81,4 +81,8 @@ message ManyListingsRequest {
 
 message ManyListingsResponse {
     repeated RedditContent listings = 1;
+    /*
+        listings isn't sent as a stream as the # of listings is constrained and
+        not gonna be that big
+    */
 }
