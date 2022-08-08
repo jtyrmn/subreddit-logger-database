@@ -26,7 +26,7 @@ service ListingsDatabase {
         the "cull listings" protocol deletes all listings in the database at are
         over a certain age
     */
-    rpc CullListings (CullListingsRequest) returns (CullListingsRequest) {}
+    rpc CullListings (CullListingsRequest) returns (CullListingsResponse) {}
 
     /*
         pulls a limited amount of listings, usually for display on a web-page.
