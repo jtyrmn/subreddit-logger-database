@@ -22,7 +22,7 @@ import (
 */
 
 // holds an instance of the database connection
-type connection struct {
+type Connection struct {
 	connection mongo.Client
 
 	//the listings collection is probably the only collection this file will ever touch
@@ -30,7 +30,7 @@ type connection struct {
 }
 
 //call this function to establish a new connection with your mongodb db
-func Connect() (*connection, error) {
+func Connect() (*Connection, error) {
 	connectionString := util.GetEnv("MONGODB_CONNECTION_STRING")
 	databaseName := util.GetEnv("MONGODB_DATABASE_NAME")
 
@@ -42,14 +42,14 @@ func Connect() (*connection, error) {
 	//"listings" collection
 	collection := conn.Database(databaseName).Collection("listings")
 
-	return &connection{connection: *conn, listings: *collection}, nil
+	return &Connection{connection: *conn, listings: *collection}, nil
 }
 
 // see pb/proto/ListingsDatabase.proto for some context on these functions
 // below functions are used in implementations of rpc protocols in the .proto
 // above
 
-func (c connection) ManyListings(limit uint32, skip uint32) ([]*pb.RedditContent, error) {
+func (c Connection) ManyListings(limit uint32, skip uint32) ([]*pb.RedditContent, error) {
 	if limit == 0 {
 		return make([]*pb.RedditContent, 0), nil
 	}
@@ -68,7 +68,7 @@ func (c connection) ManyListings(limit uint32, skip uint32) ([]*pb.RedditContent
 	for data.Next(context.Background()) {
 		listing, err := util.BsonToRedditContent(data.Current)
 		if err != nil {
-			log.Printf("warning: decoding listing from database failed: %s", err)
+			log.Printf("warning: decoding listing from database failed: %s", err) // TODO: this should be a proper call to the logger, not a regular printf
 			continue
 		}
 

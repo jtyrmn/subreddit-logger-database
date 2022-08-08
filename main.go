@@ -5,6 +5,8 @@ import (
 
 	"github.com/joho/godotenv"
 	"github.com/jtyrmn/subreddit-logger-database/database"
+	"github.com/jtyrmn/subreddit-logger-database/server"
+	"github.com/jtyrmn/subreddit-logger-database/util"
 )
 
 func main() {
@@ -20,12 +22,14 @@ func main() {
 		panic(err)
 	}
 
-	data, err := connection.ManyListings(4, 0)
+	server, err := server.NewServer(connection)
 	if err != nil {
 		panic(err)
 	}
 
-	for _, listing := range data {
-		fmt.Println(listing.MetaData.Title)
+	fmt.Printf("now listening on %s\n", util.GetEnv("SUBREDDIT_LOGGER_DATABASE_LOCATION"))
+	err = server.Listen()
+	if err != nil {
+		panic(err)
 	}
 }
