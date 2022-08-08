@@ -20,7 +20,7 @@ service ListingsDatabase {
         the "update listings" protocol updates the records of pre-existing 
         listings in the database
     */
-    rpc UpdateListings (stream RedditContent) returns  (UpdateListingsResponse) {}
+    rpc UpdateListings (stream RedditContent) returns (UpdateListingsResponse) {}
 
     /*
         the "cull listings" protocol deletes all listings in the database at are
@@ -34,6 +34,12 @@ service ListingsDatabase {
         arbitrary as of writing this comment
     */
     rpc ManyListings (ManyListingsRequest) returns (ManyListingsResponse) {}
+
+    /*
+        FetchListing retrieves a specific listing by ID from the database
+    */
+    rpc FetchListing (FetchListingRequest) returns (RedditContent) {}
+
 
 }
 
@@ -85,4 +91,8 @@ message ManyListingsResponse {
         listings isn't sent as a stream as the # of listings is constrained and
         not gonna be that big
     */
+}
+
+message FetchListingRequest {
+    string id = 1;
 }
