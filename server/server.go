@@ -63,6 +63,34 @@ func (s listingsDatabaseServer) ManyListings(ctx context.Context, in *pb.ManyLis
 	return &pb.ManyListingsResponse{Listings: listings}, err
 }
 
+func (s listingsDatabaseServer) FetchListing(ctx context.Context, in *pb.FetchListingRequest) (*pb.RedditContent, error) {
+	notFound := status.Error(codes.NotFound, "listing not found")
+
+	/*
+		IDs in the database must conform to a specific format, or the database
+		object is invalid. If the provided input ID is not of this format, we 
+		know it will never return anything from the database, therefore we don't
+		need to bother with querying the database
+	*/
+	if !util.IsValidID(in.Id) {
+		// should the status code be NotFound or InvalidArgument? Hmmm
+		return &pb.RedditContent{}, notFound
+	}
+
+	listing, err := s.server.databaseInstance.FetchListing(in.Id)
+	if err != nil {
+		//TODO logging
+		return &pb.RedditContent{}, status.Error(codes.Internal, "internal server error")
+	}
+
+	// not found
+	if listing == nil {
+		return &pb.RedditContent{}, notFound
+	}
+
+	return listing, nil
+}
+
 // call this (blocking) function to listen for requests
 func (s Server) Listen() error {
 	lis, err := net.Listen("tcp", util.GetEnv("SUBREDDIT_LOGGER_DATABASE_LOCATION"))

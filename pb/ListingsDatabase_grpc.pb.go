@@ -33,12 +33,15 @@ type ListingsDatabaseClient interface {
 	//
 	//the "cull listings" protocol deletes all listings in the database at are
 	//over a certain age
-	CullListings(ctx context.Context, in *CullListingsRequest, opts ...grpc.CallOption) (*CullListingsRequest, error)
+	CullListings(ctx context.Context, in *CullListingsRequest, opts ...grpc.CallOption) (*CullListingsResponse, error)
 	//
 	//pulls a limited amount of listings, usually for display on a web-page.
 	//Sorting method and other factors that choose the specific items are
 	//arbitrary as of writing this comment
 	ManyListings(ctx context.Context, in *ManyListingsRequest, opts ...grpc.CallOption) (*ManyListingsResponse, error)
+	//
+	//FetchListing retrieves a specific listing by ID from the database
+	FetchListing(ctx context.Context, in *FetchListingRequest, opts ...grpc.CallOption) (*RedditContent, error)
 }
 
 type listingsDatabaseClient struct {
@@ -117,8 +120,8 @@ func (x *listingsDatabaseUpdateListingsClient) CloseAndRecv() (*UpdateListingsRe
 	return m, nil
 }
 
-func (c *listingsDatabaseClient) CullListings(ctx context.Context, in *CullListingsRequest, opts ...grpc.CallOption) (*CullListingsRequest, error) {
-	out := new(CullListingsRequest)
+func (c *listingsDatabaseClient) CullListings(ctx context.Context, in *CullListingsRequest, opts ...grpc.CallOption) (*CullListingsResponse, error) {
+	out := new(CullListingsResponse)
 	err := c.cc.Invoke(ctx, "/ListingsDatabase/CullListings", in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -129,6 +132,15 @@ func (c *listingsDatabaseClient) CullListings(ctx context.Context, in *CullListi
 func (c *listingsDatabaseClient) ManyListings(ctx context.Context, in *ManyListingsRequest, opts ...grpc.CallOption) (*ManyListingsResponse, error) {
 	out := new(ManyListingsResponse)
 	err := c.cc.Invoke(ctx, "/ListingsDatabase/ManyListings", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *listingsDatabaseClient) FetchListing(ctx context.Context, in *FetchListingRequest, opts ...grpc.CallOption) (*RedditContent, error) {
+	out := new(RedditContent)
+	err := c.cc.Invoke(ctx, "/ListingsDatabase/FetchListing", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -150,12 +162,15 @@ type ListingsDatabaseServer interface {
 	//
 	//the "cull listings" protocol deletes all listings in the database at are
 	//over a certain age
-	CullListings(context.Context, *CullListingsRequest) (*CullListingsRequest, error)
+	CullListings(context.Context, *CullListingsRequest) (*CullListingsResponse, error)
 	//
 	//pulls a limited amount of listings, usually for display on a web-page.
 	//Sorting method and other factors that choose the specific items are
 	//arbitrary as of writing this comment
 	ManyListings(context.Context, *ManyListingsRequest) (*ManyListingsResponse, error)
+	//
+	//FetchListing retrieves a specific listing by ID from the database
+	FetchListing(context.Context, *FetchListingRequest) (*RedditContent, error)
 	mustEmbedUnimplementedListingsDatabaseServer()
 }
 
@@ -169,11 +184,14 @@ func (UnimplementedListingsDatabaseServer) SaveListings(ListingsDatabase_SaveLis
 func (UnimplementedListingsDatabaseServer) UpdateListings(ListingsDatabase_UpdateListingsServer) error {
 	return status.Errorf(codes.Unimplemented, "method UpdateListings not implemented")
 }
-func (UnimplementedListingsDatabaseServer) CullListings(context.Context, *CullListingsRequest) (*CullListingsRequest, error) {
+func (UnimplementedListingsDatabaseServer) CullListings(context.Context, *CullListingsRequest) (*CullListingsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CullListings not implemented")
 }
 func (UnimplementedListingsDatabaseServer) ManyListings(context.Context, *ManyListingsRequest) (*ManyListingsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ManyListings not implemented")
+}
+func (UnimplementedListingsDatabaseServer) FetchListing(context.Context, *FetchListingRequest) (*RedditContent, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method FetchListing not implemented")
 }
 func (UnimplementedListingsDatabaseServer) mustEmbedUnimplementedListingsDatabaseServer() {}
 
@@ -276,6 +294,24 @@ func _ListingsDatabase_ManyListings_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ListingsDatabase_FetchListing_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FetchListingRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ListingsDatabaseServer).FetchListing(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/ListingsDatabase/FetchListing",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ListingsDatabaseServer).FetchListing(ctx, req.(*FetchListingRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ListingsDatabase_ServiceDesc is the grpc.ServiceDesc for ListingsDatabase service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -290,6 +326,10 @@ var ListingsDatabase_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ManyListings",
 			Handler:    _ListingsDatabase_ManyListings_Handler,
+		},
+		{
+			MethodName: "FetchListing",
+			Handler:    _ListingsDatabase_FetchListing_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
