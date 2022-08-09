@@ -78,3 +78,31 @@ func (c Connection) ManyListings(limit uint32, skip uint32) ([]*pb.RedditContent
 
 	return result[:result_idx], nil
 }
+
+/*
+	FetchListing returns nil,nil in the case that no listing with that ID was
+	found, and no other errors. Otherwise it will return listing, nil or
+	nil, error depending on whether a different error occured
+*/
+func (c Connection) FetchListing(ID string) (*pb.RedditContent, error) {
+
+	response := c.listings.FindOne(context.Background(), bson.D{{"_id", ID}})
+	if err := response.Err(); err != nil {
+		// listing not found?
+		if err == mongo.ErrNoDocuments {
+			return nil, nil
+		}
+
+		return nil, fmt.Errorf("error querying database: %s", err)
+	}
+
+	// DecodeBytes will never return an error if the original operation to
+	// create the response object returned no errors
+	bsonBytes, _ := response.DecodeBytes()
+	listing, err := util.BsonToRedditContent(bsonBytes)
+	if err != nil {
+		return nil, fmt.Errorf("error decoding response: %s", err)
+	}
+
+	return listing, nil
+}
