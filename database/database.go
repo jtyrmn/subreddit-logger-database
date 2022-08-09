@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/jtyrmn/subreddit-logger-database/pb"
 	"github.com/jtyrmn/subreddit-logger-database/util"
@@ -105,4 +106,18 @@ func (c Connection) FetchListing(ID string) (*pb.RedditContent, error) {
 	}
 
 	return listing, nil
+}
+
+// returns # of deleted listings
+func (c Connection) CullListings(maxAge uint64) (uint32, error) {
+
+	// smallest date of creation before deletion (unix time)
+	minTimeOfCreation := uint64(time.Now().Unix()) - maxAge
+
+	response, err := c.listings.DeleteMany(context.Background(), bson.D{{"listing.date", bson.D{{"$lt", minTimeOfCreation}}}})
+	if err != nil {
+		return 0, fmt.Errorf("error calling database: %s", err)
+	}
+
+	return uint32(response.DeletedCount), nil
 }

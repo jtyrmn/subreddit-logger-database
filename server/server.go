@@ -91,6 +91,23 @@ func (s listingsDatabaseServer) FetchListing(ctx context.Context, in *pb.FetchLi
 	return listing, nil
 }
 
+func (s listingsDatabaseServer) CullListings(ctx context.Context, in *pb.CullListingsRequest) (*pb.CullListingsResponse, error) {
+	// safety check	
+	MIN_CULLING_AGE := util.GetEnvInt("MIN_CULLING_AGE")
+	if in.MaxAge < uint64(MIN_CULLING_AGE) {
+		return &pb.CullListingsResponse{}, status.Error(codes.InvalidArgument, fmt.Sprintf("cannot cull listings under minimum culling age of %d seconds", MIN_CULLING_AGE))
+	}
+
+	// something else that is also disasterous
+	response, err := s.server.databaseInstance.CullListings(in.MaxAge)
+	if err != nil {
+		//TODO logging
+		return &pb.CullListingsResponse{}, status.Error(codes.Internal, "internal server error")
+	}
+
+	return &pb.CullListingsResponse{NumDeleted: response}, nil
+}
+
 // call this (blocking) function to listen for requests
 func (s Server) Listen() error {
 	lis, err := net.Listen("tcp", util.GetEnv("SUBREDDIT_LOGGER_DATABASE_LOCATION"))

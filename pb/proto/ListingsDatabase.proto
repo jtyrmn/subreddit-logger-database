@@ -74,7 +74,7 @@ message SaveListingsResponse {}
 message UpdateListingsResponse {}
 
 message CullListingsRequest {
-    uint64 max_age = 1;
+    uint64 max_age = 1; // max age is in seconds
 }
 message CullListingsResponse {
     uint32 num_deleted = 1;
