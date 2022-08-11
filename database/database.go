@@ -121,3 +121,34 @@ func (c Connection) CullListings(maxAge uint64) (uint32, error) {
 
 	return uint32(response.DeletedCount), nil
 }
+
+/*
+	this function outputs it's retrieved listings via the out channel. This is
+	because this function will be used to in a grpc endpoint that streams it's 
+	result, so it's generally more memory and speed efficient for this function
+	to stream data out as well.
+*/
+func (c Connection) RetrieveListings(maxAge uint64, out chan *pb.RedditContent) error {
+	
+	defer close(out)
+
+	minTimeOfCreation := uint64(time.Now().Unix()) - maxAge
+
+	data, err := c.listings.Find(context.Background(), bson.D{{"listing.date", bson.D{{"$gte", minTimeOfCreation}}}})
+	if err != nil {
+		return fmt.Errorf("error querying database: %s", err)
+	}
+
+	for data.Next(context.Background()) {
+		listing, err := util.BsonToRedditContent(data.Current)
+		if err != nil {
+			// TODO: logging
+			log.Printf("warning: decoding listing from database failed: %s", err)
+			continue
+		}
+
+		out <- listing
+	}
+
+	return nil
+}
