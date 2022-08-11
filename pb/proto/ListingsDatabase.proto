@@ -36,6 +36,12 @@ service ListingsDatabase {
     rpc ManyListings (ManyListingsRequest) returns (ManyListingsResponse) {}
 
     /*
+        RetrieveListings differs from ManyListings in that it returns all
+        listings past a certain age, doesn't sort, and streams output
+    */
+    rpc RetrieveListings (RetrieveListingsRequest) returns (stream RedditContent) {}
+
+    /*
         FetchListing retrieves a specific listing by ID from the database
     */
     rpc FetchListing (FetchListingRequest) returns (RedditContent) {}
@@ -95,4 +101,8 @@ message ManyListingsResponse {
 
 message FetchListingRequest {
     string id = 1;
+}
+
+message RetrieveListingsRequest {
+    uint64 max_age = 1;
 }
