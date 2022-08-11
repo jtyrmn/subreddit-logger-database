@@ -40,6 +40,10 @@ type ListingsDatabaseClient interface {
 	//arbitrary as of writing this comment
 	ManyListings(ctx context.Context, in *ManyListingsRequest, opts ...grpc.CallOption) (*ManyListingsResponse, error)
 	//
+	//RetrieveListings differs from ManyListings in that it returns all
+	//listings past a certain age, doesn't sort, and streams output
+	RetrieveListings(ctx context.Context, in *RetrieveListingsRequest, opts ...grpc.CallOption) (ListingsDatabase_RetrieveListingsClient, error)
+	//
 	//FetchListing retrieves a specific listing by ID from the database
 	FetchListing(ctx context.Context, in *FetchListingRequest, opts ...grpc.CallOption) (*RedditContent, error)
 }
@@ -138,6 +142,38 @@ func (c *listingsDatabaseClient) ManyListings(ctx context.Context, in *ManyListi
 	return out, nil
 }
 
+func (c *listingsDatabaseClient) RetrieveListings(ctx context.Context, in *RetrieveListingsRequest, opts ...grpc.CallOption) (ListingsDatabase_RetrieveListingsClient, error) {
+	stream, err := c.cc.NewStream(ctx, &ListingsDatabase_ServiceDesc.Streams[2], "/ListingsDatabase/RetrieveListings", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &listingsDatabaseRetrieveListingsClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type ListingsDatabase_RetrieveListingsClient interface {
+	Recv() (*RedditContent, error)
+	grpc.ClientStream
+}
+
+type listingsDatabaseRetrieveListingsClient struct {
+	grpc.ClientStream
+}
+
+func (x *listingsDatabaseRetrieveListingsClient) Recv() (*RedditContent, error) {
+	m := new(RedditContent)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 func (c *listingsDatabaseClient) FetchListing(ctx context.Context, in *FetchListingRequest, opts ...grpc.CallOption) (*RedditContent, error) {
 	out := new(RedditContent)
 	err := c.cc.Invoke(ctx, "/ListingsDatabase/FetchListing", in, out, opts...)
@@ -169,6 +205,10 @@ type ListingsDatabaseServer interface {
 	//arbitrary as of writing this comment
 	ManyListings(context.Context, *ManyListingsRequest) (*ManyListingsResponse, error)
 	//
+	//RetrieveListings differs from ManyListings in that it returns all
+	//listings past a certain age, doesn't sort, and streams output
+	RetrieveListings(*RetrieveListingsRequest, ListingsDatabase_RetrieveListingsServer) error
+	//
 	//FetchListing retrieves a specific listing by ID from the database
 	FetchListing(context.Context, *FetchListingRequest) (*RedditContent, error)
 	mustEmbedUnimplementedListingsDatabaseServer()
@@ -189,6 +229,9 @@ func (UnimplementedListingsDatabaseServer) CullListings(context.Context, *CullLi
 }
 func (UnimplementedListingsDatabaseServer) ManyListings(context.Context, *ManyListingsRequest) (*ManyListingsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ManyListings not implemented")
+}
+func (UnimplementedListingsDatabaseServer) RetrieveListings(*RetrieveListingsRequest, ListingsDatabase_RetrieveListingsServer) error {
+	return status.Errorf(codes.Unimplemented, "method RetrieveListings not implemented")
 }
 func (UnimplementedListingsDatabaseServer) FetchListing(context.Context, *FetchListingRequest) (*RedditContent, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method FetchListing not implemented")
@@ -294,6 +337,27 @@ func _ListingsDatabase_ManyListings_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ListingsDatabase_RetrieveListings_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(RetrieveListingsRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(ListingsDatabaseServer).RetrieveListings(m, &listingsDatabaseRetrieveListingsServer{stream})
+}
+
+type ListingsDatabase_RetrieveListingsServer interface {
+	Send(*RedditContent) error
+	grpc.ServerStream
+}
+
+type listingsDatabaseRetrieveListingsServer struct {
+	grpc.ServerStream
+}
+
+func (x *listingsDatabaseRetrieveListingsServer) Send(m *RedditContent) error {
+	return x.ServerStream.SendMsg(m)
+}
+
 func _ListingsDatabase_FetchListing_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(FetchListingRequest)
 	if err := dec(in); err != nil {
@@ -342,6 +406,11 @@ var ListingsDatabase_ServiceDesc = grpc.ServiceDesc{
 			StreamName:    "UpdateListings",
 			Handler:       _ListingsDatabase_UpdateListings_Handler,
 			ClientStreams: true,
+		},
+		{
+			StreamName:    "RetrieveListings",
+			Handler:       _ListingsDatabase_RetrieveListings_Handler,
+			ServerStreams: true,
 		},
 	},
 	Metadata: "pb/proto/ListingsDatabase.proto",

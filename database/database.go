@@ -128,7 +128,7 @@ func (c Connection) CullListings(maxAge uint64) (uint32, error) {
 	result, so it's generally more memory and speed efficient for this function
 	to stream data out as well.
 */
-func (c Connection) RetrieveListings(maxAge uint64, out chan *pb.RedditContent) error {
+func (c Connection) RetrieveListings(maxAge uint64, out chan<- *pb.RedditContent, outErr chan<- error) {
 	
 	defer close(out)
 
@@ -136,7 +136,8 @@ func (c Connection) RetrieveListings(maxAge uint64, out chan *pb.RedditContent) 
 
 	data, err := c.listings.Find(context.Background(), bson.D{{"listing.date", bson.D{{"$gte", minTimeOfCreation}}}})
 	if err != nil {
-		return fmt.Errorf("error querying database: %s", err)
+		outErr <- fmt.Errorf("error querying database: %s", err)
+		return
 	}
 
 	for data.Next(context.Background()) {
@@ -150,5 +151,5 @@ func (c Connection) RetrieveListings(maxAge uint64, out chan *pb.RedditContent) 
 		out <- listing
 	}
 
-	return nil
+	outErr <- nil
 }

@@ -2,7 +2,9 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log"
 	"net"
 
 	"github.com/jtyrmn/subreddit-logger-database/database"
@@ -68,7 +70,7 @@ func (s listingsDatabaseServer) FetchListing(ctx context.Context, in *pb.FetchLi
 
 	/*
 		IDs in the database must conform to a specific format, or the database
-		object is invalid. If the provided input ID is not of this format, we 
+		object is invalid. If the provided input ID is not of this format, we
 		know it will never return anything from the database, therefore we don't
 		need to bother with querying the database
 	*/
@@ -92,7 +94,7 @@ func (s listingsDatabaseServer) FetchListing(ctx context.Context, in *pb.FetchLi
 }
 
 func (s listingsDatabaseServer) CullListings(ctx context.Context, in *pb.CullListingsRequest) (*pb.CullListingsResponse, error) {
-	// safety check	
+	// safety check
 	MIN_CULLING_AGE := util.GetEnvInt("MIN_CULLING_AGE")
 	if in.MaxAge < uint64(MIN_CULLING_AGE) {
 		return &pb.CullListingsResponse{}, status.Error(codes.InvalidArgument, fmt.Sprintf("cannot cull listings under minimum culling age of %d seconds", MIN_CULLING_AGE))
@@ -106,6 +108,29 @@ func (s listingsDatabaseServer) CullListings(ctx context.Context, in *pb.CullLis
 	}
 
 	return &pb.CullListingsResponse{NumDeleted: response}, nil
+}
+
+func (s listingsDatabaseServer) RetrieveListings(in *pb.RetrieveListingsRequest, stream pb.ListingsDatabase_RetrieveListingsServer) error {
+	out := make(chan *pb.RedditContent)
+	outErr := make(chan error, 1)
+
+	go s.server.databaseInstance.RetrieveListings(in.MaxAge, out, outErr)
+
+	for listing := range out {
+		err := stream.Send(listing)
+		if err != nil {
+			// TODO: logging
+			log.Printf("warning: error sending listing to client: %s", err)
+		}
+	}
+
+	// return the above RetrieveListings call's output
+	if err := <-outErr; err != nil {
+		// TODO: logging
+		return errors.New("internal server error")
+	}
+
+	return nil
 }
 
 // call this (blocking) function to listen for requests
