@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
 
@@ -128,6 +129,39 @@ func (s listingsDatabaseServer) RetrieveListings(in *pb.RetrieveListingsRequest,
 	if err := <-outErr; err != nil {
 		// TODO: logging
 		return errors.New("internal server error")
+	}
+
+	return nil
+}
+
+func (s listingsDatabaseServer) SaveListings(stream pb.ListingsDatabase_SaveListingsServer) error {
+	in := make(chan *pb.RedditContent)
+	errChan := make(chan error, 1)
+	go s.server.databaseInstance.SaveListings(in, errChan)
+
+	for {
+		listing, err := stream.Recv()
+		if err == io.EOF {
+			// finished recieving items, now send response
+			///....
+			break
+		}
+		
+		if err != nil {
+			// TODO: logging
+			log.Printf("warning: error recieving listing: %s", err)
+			break
+		}
+
+		in <- listing
+	}
+	close(in)
+
+	// recieve SaveListings output
+	if err := <-errChan; err != nil {
+		// TODO: logging
+		fmt.Println(err)
+		return status.Error(codes.Internal, "internal server error")
 	}
 
 	return nil

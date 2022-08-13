@@ -150,6 +150,7 @@ func (c Connection) RetrieveListings(maxAge uint64, out chan<- *pb.RedditContent
 
 		out <- listing
 	}
+	close(out)
 
 	outErr <- nil
 }
@@ -157,26 +158,34 @@ func (c Connection) RetrieveListings(maxAge uint64, out chan<- *pb.RedditContent
 /*
 	stream data into in parameter.
 */
-func (c Connection) SaveListings(in <-chan *pb.RedditContent) error {
+func (c Connection) SaveListings(in <-chan *pb.RedditContent, errOut chan<- error) {
 
 	// insert recieved items into a bson-friendly array
-	documents := make([]interface{}, 10)
+	documents := make([]interface{}, 0)
 	for listing := range in {
+		// validate listing
+		if !util.IsValidID(listing.Id) {
+			log.Printf("warning: listing with invalid ID \"%s\" rejected\n", listing.Id)
+			continue
+		}
+		if !util.IsValidID(listing.MetaData.Id) {
+			log.Printf("warning: listing with invalid metadata ID \"%s\" rejected\n", listing.MetaData.Id)
+		}
 		/*
 			TODO: i'm creating a fixed-sized array and appending to it in each
 			iteration. This is quite inefficient, planning to have the client
 			send the # of listings in a header so documents length is known.
 		*/
-		fmt.Printf("listing: %v \nbson: %v\n", listing, util.RedditContentToBson(*listing))
 		documents = append(documents, util.RedditContentToBson(*listing))
 	}
 
 	_, err := c.listings.InsertMany(context.Background(), documents)
-	if err != nil && !mongo.IsDuplicateKeyError(err) { // don't worry about duplicate key errors
-		return fmt.Errorf("error inserting listings into database: %s", err)
+	if err != nil && !isDuplicateKeyError(err) { // don't worry about duplicate key errors
+		errOut <- fmt.Errorf("error inserting listings into database: %s", err)
+		return
 	}
 	
-	return nil
+	errOut <- nil
 }
 
 // duplicate key errors are expected when inserting many listings
