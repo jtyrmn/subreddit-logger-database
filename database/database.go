@@ -176,6 +176,11 @@ func (c Connection) SaveListings(in <-chan *pb.RedditContent, errOut chan<- erro
 		documents = append(documents, util.RedditContentToBson(*listing))
 	}
 
+	if len(documents) == 0 {
+		errOut <- nil
+		return
+	}
+
 	_, err := c.listings.InsertMany(context.Background(), documents)
 	if err != nil && !isDuplicateKeyError(err) { // don't worry about duplicate key errors
 		errOut <- fmt.Errorf("error inserting listings into database: %s", err)
