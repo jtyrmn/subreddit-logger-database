@@ -1,10 +1,36 @@
 package util
 
-import "regexp"
+import (
+	"errors"
+	"regexp"
+
+	"github.com/jtyrmn/subreddit-logger-database/pb"
+)
 
 // the listings in the database must store IDs in the form of t-_------, or
 // regex ^t[1-6]_[a-z0-9]{6}$
 func IsValidID(ID string) bool {
 	result, _ := regexp.MatchString("^t[1-6]_[a-z0-9]{6}$", string(ID))
 	return result
+}
+
+/*
+perform this check on RedditContents before attempting to insert them into
+the database
+
+returns nil if valid
+*/
+func IsValidForDatabase(rc pb.RedditContent) error {
+	if !IsValidID(rc.Id) {
+		return errors.New("invalid ID")
+	}
+	if !IsValidID(rc.MetaData.Id) {
+		return errors.New("invalid metadata ID")
+	}
+
+	if rc.Id != rc.MetaData.Id {
+		return errors.New("ID and metadata ID don't match")
+	}
+
+	return nil
 }

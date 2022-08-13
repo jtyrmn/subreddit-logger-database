@@ -164,12 +164,9 @@ func (c Connection) SaveListings(in <-chan *pb.RedditContent, errOut chan<- erro
 	documents := make([]interface{}, 0)
 	for listing := range in {
 		// validate listing
-		if !util.IsValidID(listing.Id) {
-			log.Printf("warning: listing with invalid ID \"%s\" rejected\n", listing.Id)
-			continue
-		}
-		if !util.IsValidID(listing.MetaData.Id) {
-			log.Printf("warning: listing with invalid metadata ID \"%s\" rejected\n", listing.MetaData.Id)
+		if err := util.IsValidForDatabase(*listing); err != nil {
+			log.Printf("warning: listing of ID \"%s\" rejected: %s", listing.Id, err)
+			break
 		}
 		/*
 			TODO: i'm creating a fixed-sized array and appending to it in each
