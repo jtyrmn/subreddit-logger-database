@@ -21,6 +21,9 @@ service ListingsDatabase {
     /*
         the "update listings" protocol updates the records of pre-existing 
         listings in the database
+
+        ensure that the listings-count header is set before calling
+        UpdateListings
     */
     rpc UpdateListings (stream RedditContent) returns (UpdateListingsResponse) {}
 

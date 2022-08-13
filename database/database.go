@@ -211,6 +211,60 @@ func (c Connection) SaveListings(numListings uint32, in <-chan *pb.RedditContent
 	errOut <- nil
 }
 
+/*
+This function, it's inputs especially, are practically the same as SaveListings
+*/
+func (c Connection) UpdateListings(numListings uint32, in <-chan *pb.RedditContent, errOut chan<- error, errOutInternal chan<- error) {
+	if numListings == 0 {
+		errOut <- nil
+		return
+	}
+
+	//have to construct a bulk write, a unique $push update for every entry listing
+	models := make([]mongo.WriteModel, numListings)
+	models_idx := 0
+	for listing := range in {
+		// too many listings sent by client
+		if models_idx >= len(models) {
+			errOut <- errors.New("number of expected listings exceeded")
+			return
+		}
+
+		//template for a single entry under a listing
+		type record struct {
+			Upvotes  uint32
+			Comments uint32
+			Date     uint64
+		}
+
+		rec := record{
+			Upvotes:  listing.MetaData.Upvotes,
+			Comments: listing.MetaData.Comments,
+			Date:     listing.MetaData.DateQueried,
+		}
+		model := mongo.NewUpdateOneModel().SetFilter(bson.D{{"_id", listing.Id}}).SetUpdate(bson.D{{"$push", bson.D{{"entries", rec}}}})
+
+		models[models_idx] = model
+		models_idx += 1
+	}
+
+	// in case less documents than expected arrived
+	models = models[:models_idx]
+
+	if len(models) == 0 {
+		errOut <- nil
+		return
+	}
+
+	_, err := c.listings.BulkWrite(context.Background(), models, options.BulkWrite().SetOrdered(false))
+	if err != nil {
+		errOutInternal <- fmt.Errorf("error updating database listings: %s", err)
+		return
+	}
+
+	errOut <- nil
+}
+
 // duplicate key errors are expected when inserting many listings
 func isDuplicateKeyError(err error) bool {
 	conv, ok := err.(mongo.BulkWriteException)

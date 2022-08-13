@@ -162,7 +162,7 @@ func (s listingsDatabaseServer) SaveListings(stream pb.ListingsDatabase_SaveList
 
 		if err != nil {
 			// TODO: logging
-			log.Printf("warning: error recieving listing: %s", err)
+			log.Printf("SaveListings warning: error recieving listing: %s", err)
 			break
 		}
 
@@ -187,9 +187,55 @@ func (s listingsDatabaseServer) SaveListings(stream pb.ListingsDatabase_SaveList
 	return nil
 }
 
-// for SaveListings func
+func (s listingsDatabaseServer) UpdateListings(stream pb.ListingsDatabase_UpdateListingsServer) error {
+	// get the # of listings the client will send
+	numListings, err := extractNumListings(stream)
+	if err != nil {
+		return err
+	}
+
+	in := make(chan *pb.RedditContent)
+	errChan := make(chan error, 1)
+	errChanInternal := make(chan error, 1)
+	go s.server.databaseInstance.UpdateListings(numListings, in, errChan, errChanInternal)
+
+	for {
+		listing, err := stream.Recv()
+		if err == io.EOF {
+			// finished recieving items, now send response
+			break
+		}
+
+		if err != nil {
+			// TODO: logging
+			log.Printf("UpdateListings warning: error recieving listing: %s", err)
+			break
+		}
+
+		in <- listing
+	}
+	close(in)
+
+	// recieve SaveListings output
+	select {
+	case err := <-errChan: // regular client-side error
+		if err != nil {
+			return status.Error(codes.InvalidArgument, err.Error())
+		}
+	case err := <-errChanInternal: // internal server error
+		if err != nil {
+			// TODO: logging
+			log.Printf("UpdateListings error: %s", err)
+			return status.Error(codes.Internal, INTERNAL_SERVER_ERROR)
+		}
+	}
+
+	return nil
+}
+
+// for SaveListings + UpdateListings funcs
 // attempts to parse NUM_LISTINGS_HEADER header from client's request
-func extractNumListings(stream pb.ListingsDatabase_SaveListingsServer) (uint32, error) {
+func extractNumListings(stream grpc.ServerStream) (uint32, error) {
 	md, ok := metadata.FromIncomingContext(stream.Context())
 	if !ok {
 		return 0, status.Error(codes.InvalidArgument, "cannot obtain metadata from client")
