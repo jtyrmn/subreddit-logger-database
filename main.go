@@ -15,7 +15,7 @@ func main() {
 		panic(err)
 	}
 
-	//testing ManyListings database functionality
+	//testing SaveListings database functionality
 
 	connection, err := database.Connect()
 	if err != nil {
@@ -32,4 +32,6 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+
+
 }
