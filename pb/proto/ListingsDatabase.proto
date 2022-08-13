@@ -13,6 +13,8 @@ service ListingsDatabase {
     /*
         the "save listings" protocol sends an unconstrained amount of newly 
         discovered listings to the database to be saved.
+
+        ensure that the listings-count header is set before calling SaveListings
     */
     rpc SaveListings (stream RedditContent) returns (SaveListingsResponse) {}
 

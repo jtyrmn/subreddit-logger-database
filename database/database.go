@@ -30,7 +30,7 @@ type Connection struct {
 	listings mongo.Collection
 }
 
-//call this function to establish a new connection with your mongodb db
+// call this function to establish a new connection with your mongodb db
 func Connect() (*Connection, error) {
 	connectionString := util.GetEnv("MONGODB_CONNECTION_STRING")
 	databaseName := util.GetEnv("MONGODB_DATABASE_NAME")
@@ -81,9 +81,9 @@ func (c Connection) ManyListings(limit uint32, skip uint32) ([]*pb.RedditContent
 }
 
 /*
-	FetchListing returns nil,nil in the case that no listing with that ID was
-	found, and no other errors. Otherwise it will return listing, nil or
-	nil, error depending on whether a different error occured
+FetchListing returns nil,nil in the case that no listing with that ID was
+found, and no other errors. Otherwise it will return listing, nil or
+nil, error depending on whether a different error occured
 */
 func (c Connection) FetchListing(ID string) (*pb.RedditContent, error) {
 
@@ -123,13 +123,13 @@ func (c Connection) CullListings(maxAge uint64) (uint32, error) {
 }
 
 /*
-	this function outputs it's retrieved listings via the out channel. This is
-	because this function will be used to in a grpc endpoint that streams it's 
-	result, so it's generally more memory and speed efficient for this function
-	to stream data out as well.
+this function outputs it's retrieved listings via the out channel. This is
+because this function will be used to in a grpc endpoint that streams it's
+result, so it's generally more memory and speed efficient for this function
+to stream data out as well.
 */
 func (c Connection) RetrieveListings(maxAge uint64, out chan<- *pb.RedditContent, outErr chan<- error) {
-	
+
 	defer close(out)
 
 	minTimeOfCreation := uint64(time.Now().Unix()) - maxAge
@@ -156,25 +156,46 @@ func (c Connection) RetrieveListings(maxAge uint64, out chan<- *pb.RedditContent
 }
 
 /*
-	stream data into in parameter.
+stream data into in parameter.
+
+use errOut for errors visible to the API consumer
+use errOutInteral for internal server errors
+
+only write to one of these channels before exiting. If there are no errors,
+write nil to either
 */
-func (c Connection) SaveListings(in <-chan *pb.RedditContent, errOut chan<- error) {
+func (c Connection) SaveListings(numListings uint32, in <-chan *pb.RedditContent, errOut chan<- error, errOutInternal chan<- error) {
+	if numListings == 0 {
+		errOut <- nil
+		return
+	}
 
 	// insert recieved items into a bson-friendly array
-	documents := make([]interface{}, 0)
+	documents := make([]interface{}, numListings)
+	documents_idx := 0
 	for listing := range in {
+		// too many listings sent by client
+		if documents_idx >= len(documents) {
+			errOut <- errors.New("number of expected listings exceeded")
+			return
+		}
+
 		// validate listing
 		if err := util.IsValidForDatabase(*listing); err != nil {
 			log.Printf("warning: listing of ID \"%s\" rejected: %s", listing.Id, err)
-			break
+			/*
+				client never recieves these errors unfortunetly, should probably
+				redesign how this works. A bidirectional stream perhaps. TODO
+			*/
+			continue
 		}
-		/*
-			TODO: i'm creating a fixed-sized array and appending to it in each
-			iteration. This is quite inefficient, planning to have the client
-			send the # of listings in a header so documents length is known.
-		*/
-		documents = append(documents, util.RedditContentToBson(*listing))
+
+		documents[documents_idx] = util.RedditContentToBson(*listing)
+		documents_idx += 1
 	}
+
+	// in case less documents than expected arrived
+	documents = documents[:documents_idx]
 
 	if len(documents) == 0 {
 		errOut <- nil
@@ -183,10 +204,10 @@ func (c Connection) SaveListings(in <-chan *pb.RedditContent, errOut chan<- erro
 
 	_, err := c.listings.InsertMany(context.Background(), documents)
 	if err != nil && !isDuplicateKeyError(err) { // don't worry about duplicate key errors
-		errOut <- fmt.Errorf("error inserting listings into database: %s", err)
+		errOutInternal <- fmt.Errorf("error inserting listings into database: %s", err)
 		return
 	}
-	
+
 	errOut <- nil
 }
 

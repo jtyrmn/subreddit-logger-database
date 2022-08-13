@@ -7,18 +7,25 @@ import (
 	"io"
 	"log"
 	"net"
+	"strconv"
 
 	"github.com/jtyrmn/subreddit-logger-database/database"
 	"github.com/jtyrmn/subreddit-logger-database/pb"
 	"github.com/jtyrmn/subreddit-logger-database/util"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
 /*
 	this file holds the code that implements a grpc server
 */
+
+const (
+	NUM_LISTINGS_HEADER   = "listings-count" // see SaveListings
+	INTERNAL_SERVER_ERROR = "internal server error"
+)
 
 type Server struct {
 	// a reference to our listings database
@@ -60,7 +67,7 @@ func (s listingsDatabaseServer) ManyListings(ctx context.Context, in *pb.ManyLis
 	listings, err := s.server.databaseInstance.ManyListings(in.Limit, in.Skip)
 	if err != nil {
 		// TODO: implement logging and record this internal error
-		return &pb.ManyListingsResponse{}, status.Error(codes.Internal, "internal server error")
+		return &pb.ManyListingsResponse{}, status.Error(codes.Internal, INTERNAL_SERVER_ERROR)
 	}
 
 	return &pb.ManyListingsResponse{Listings: listings}, err
@@ -83,7 +90,7 @@ func (s listingsDatabaseServer) FetchListing(ctx context.Context, in *pb.FetchLi
 	listing, err := s.server.databaseInstance.FetchListing(in.Id)
 	if err != nil {
 		//TODO logging
-		return &pb.RedditContent{}, status.Error(codes.Internal, "internal server error")
+		return &pb.RedditContent{}, status.Error(codes.Internal, INTERNAL_SERVER_ERROR)
 	}
 
 	// not found
@@ -105,7 +112,7 @@ func (s listingsDatabaseServer) CullListings(ctx context.Context, in *pb.CullLis
 	response, err := s.server.databaseInstance.CullListings(in.MaxAge)
 	if err != nil {
 		//TODO logging
-		return &pb.CullListingsResponse{}, status.Error(codes.Internal, "internal server error")
+		return &pb.CullListingsResponse{}, status.Error(codes.Internal, INTERNAL_SERVER_ERROR)
 	}
 
 	return &pb.CullListingsResponse{NumDeleted: response}, nil
@@ -128,25 +135,31 @@ func (s listingsDatabaseServer) RetrieveListings(in *pb.RetrieveListingsRequest,
 	// return the above RetrieveListings call's output
 	if err := <-outErr; err != nil {
 		// TODO: logging
-		return errors.New("internal server error")
+		return errors.New(INTERNAL_SERVER_ERROR)
 	}
 
 	return nil
 }
 
 func (s listingsDatabaseServer) SaveListings(stream pb.ListingsDatabase_SaveListingsServer) error {
+	// get the # of listings the client will send
+	numListings, err := extractNumListings(stream)
+	if err != nil {
+		return err
+	}
+
 	in := make(chan *pb.RedditContent)
 	errChan := make(chan error, 1)
-	go s.server.databaseInstance.SaveListings(in, errChan)
+	errChanInternal := make(chan error, 1)
+	go s.server.databaseInstance.SaveListings(numListings, in, errChan, errChanInternal)
 
 	for {
 		listing, err := stream.Recv()
 		if err == io.EOF {
 			// finished recieving items, now send response
-			///....
 			break
 		}
-		
+
 		if err != nil {
 			// TODO: logging
 			log.Printf("warning: error recieving listing: %s", err)
@@ -158,13 +171,44 @@ func (s listingsDatabaseServer) SaveListings(stream pb.ListingsDatabase_SaveList
 	close(in)
 
 	// recieve SaveListings output
-	if err := <-errChan; err != nil {
-		// TODO: logging
-		fmt.Println(err)
-		return status.Error(codes.Internal, "internal server error")
+	select {
+	case err := <-errChan: // regular client-side error
+		if err != nil {
+			return status.Error(codes.InvalidArgument, err.Error())
+		}
+	case err := <-errChanInternal: // internal server error
+		if err != nil {
+			// TODO: logging
+			log.Printf("SaveListings error: %s", err)
+			return status.Error(codes.Internal, INTERNAL_SERVER_ERROR)
+		}
 	}
 
 	return nil
+}
+
+// for SaveListings func
+// attempts to parse NUM_LISTINGS_HEADER header from client's request
+func extractNumListings(stream pb.ListingsDatabase_SaveListingsServer) (uint32, error) {
+	md, ok := metadata.FromIncomingContext(stream.Context())
+	if !ok {
+		return 0, status.Error(codes.InvalidArgument, "cannot obtain metadata from client")
+	}
+
+	numListings, ok := md[NUM_LISTINGS_HEADER]
+	if !ok {
+		return 0, status.Error(codes.InvalidArgument, fmt.Sprintf("%s header not found", NUM_LISTINGS_HEADER))
+	}
+	if len(numListings) != 1 {
+		return 0, status.Error(codes.InvalidArgument, fmt.Sprintf("%s must have a single value", NUM_LISTINGS_HEADER))
+	}
+
+	parsed, err := strconv.Atoi(numListings[0])
+	if err != nil || parsed < 0 {
+		return 0, status.Error(codes.InvalidArgument, fmt.Sprintf("%s must be an non-negative integer", NUM_LISTINGS_HEADER))
+	}
+
+	return uint32(parsed), nil
 }
 
 // call this (blocking) function to listen for requests
