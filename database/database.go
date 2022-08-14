@@ -150,7 +150,6 @@ func (c Connection) RetrieveListings(maxAge uint64, out chan<- *pb.RedditContent
 
 		out <- listing
 	}
-	close(out)
 
 	outErr <- nil
 }
