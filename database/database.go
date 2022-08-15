@@ -180,7 +180,7 @@ func (c Connection) SaveListings(numListings uint32, in <-chan *pb.RedditContent
 		}
 
 		// validate listing
-		if err := util.IsValidForDatabase(*listing); err != nil {
+		if err := util.IsValidForDatabase(listing); err != nil {
 			log.Printf("warning: listing of ID \"%s\" rejected: %s", listing.Id, err)
 			/*
 				client never recieves these errors unfortunetly, should probably
