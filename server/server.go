@@ -184,7 +184,7 @@ func (s listingsDatabaseServer) SaveListings(stream pb.ListingsDatabase_SaveList
 		}
 	}
 
-	return nil
+	return stream.SendAndClose(&pb.SaveListingsResponse{})
 }
 
 func (s listingsDatabaseServer) UpdateListings(stream pb.ListingsDatabase_UpdateListingsServer) error {
@@ -230,7 +230,7 @@ func (s listingsDatabaseServer) UpdateListings(stream pb.ListingsDatabase_Update
 		}
 	}
 
-	return nil
+	return stream.SendAndClose(&pb.UpdateListingsResponse{})
 }
 
 // for SaveListings + UpdateListings funcs
