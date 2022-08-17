@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"log"
 
 	"github.com/joho/godotenv"
 	"github.com/jtyrmn/subreddit-logger-database/database"
@@ -15,8 +15,6 @@ func main() {
 		panic(err)
 	}
 
-	//testing SaveListings database functionality
-
 	connection, err := database.Connect()
 	if err != nil {
 		panic(err)
@@ -27,7 +25,7 @@ func main() {
 		panic(err)
 	}
 
-	fmt.Printf("now listening on %s\n", util.GetEnv("SUBREDDIT_LOGGER_DATABASE_LOCATION"))
+	log.Printf("now listening on %s\n\n", util.GetEnv("SUBREDDIT_LOGGER_DATABASE_LOCATION"))
 	err = server.Listen()
 	if err != nil {
 		panic(err)

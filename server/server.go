@@ -2,14 +2,13 @@ package server
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"strconv"
 
 	"github.com/jtyrmn/subreddit-logger-database/database"
+	"github.com/jtyrmn/subreddit-logger-database/logging"
 	"github.com/jtyrmn/subreddit-logger-database/pb"
 	"github.com/jtyrmn/subreddit-logger-database/util"
 	"google.golang.org/grpc"
@@ -25,6 +24,14 @@ import (
 const (
 	NUM_LISTINGS_HEADER   = "listings-count" // see SaveListings
 	INTERNAL_SERVER_ERROR = "internal server error"
+
+	// strings for logging (to identify what rpc was called)
+	MANY_LISTINGS    = "ManyListings"
+	FETCH_LISTING    = "FetchListing"
+	CULL_LISTING     = "CullListing"
+	RETRIEVE_LISTING = "RetrieveListing"
+	SAVE_LISTINGS    = "SaveListings"
+	UPDATE_LISTINGS  = "UpdateListings"
 )
 
 type Server struct {
@@ -55,25 +62,32 @@ type listingsDatabaseServer struct {
 }
 
 func (s listingsDatabaseServer) ManyListings(ctx context.Context, in *pb.ManyListingsRequest) (*pb.ManyListingsResponse, error) {
+	ls := logging.Info(MANY_LISTINGS, ctx, fmt.Sprintf("limit=%d skip=%d", in.Limit, in.Skip))
+
 	// checking that input is valid
 	if in.Limit > uint32(s.server.MAX_DATABASE_LIMIT) {
+		logging.ClientError(ls, "max limit exceeded")
 		return &pb.ManyListingsResponse{}, status.Error(codes.InvalidArgument, fmt.Sprintf("limit argument must not exceed %d", s.server.MAX_DATABASE_LIMIT))
 	}
 	if in.Skip > uint32(s.server.MAX_DATABASE_SKIP) {
+		logging.ClientError(ls, "max skip exceeded")
 		return &pb.ManyListingsResponse{}, status.Error(codes.InvalidArgument, fmt.Sprintf("skip argument must not exceed %d", s.server.MAX_DATABASE_SKIP))
 	}
 
 	// fetch the listings
 	listings, err := s.server.databaseInstance.ManyListings(in.Limit, in.Skip)
 	if err != nil {
-		// TODO: implement logging and record this internal error
+		logging.InternalError(ls, err)
 		return &pb.ManyListingsResponse{}, status.Error(codes.Internal, INTERNAL_SERVER_ERROR)
 	}
 
+	logging.InfoTail(ls, fmt.Sprintf("returning %s listings", len(listings)))
 	return &pb.ManyListingsResponse{Listings: listings}, err
 }
 
 func (s listingsDatabaseServer) FetchListing(ctx context.Context, in *pb.FetchListingRequest) (*pb.RedditContent, error) {
+	ls := logging.Info(FETCH_LISTING, ctx, fmt.Sprintf("requesting \"%s\"", in.Id))
+
 	notFound := status.Error(codes.NotFound, "listing not found")
 
 	/*
@@ -84,68 +98,85 @@ func (s listingsDatabaseServer) FetchListing(ctx context.Context, in *pb.FetchLi
 	*/
 	if !util.IsValidID(in.Id) {
 		// should the status code be NotFound or InvalidArgument? Hmmm
+		logging.ClientError(ls, notFound.Error())
 		return &pb.RedditContent{}, notFound
 	}
 
 	listing, err := s.server.databaseInstance.FetchListing(in.Id)
 	if err != nil {
-		//TODO logging
+		logging.InternalError(ls, err)
 		return &pb.RedditContent{}, status.Error(codes.Internal, INTERNAL_SERVER_ERROR)
 	}
 
 	// not found
 	if listing == nil {
+		logging.ClientError(ls, notFound.Error())
 		return &pb.RedditContent{}, notFound
 	}
 
+	logging.InfoTail(ls, "returning listing")
 	return listing, nil
 }
 
 func (s listingsDatabaseServer) CullListings(ctx context.Context, in *pb.CullListingsRequest) (*pb.CullListingsResponse, error) {
+	ls := logging.Info(CULL_LISTING, ctx, fmt.Sprintf("culling listing over %d seconds old", in.MaxAge))
 	// safety check
 	MIN_CULLING_AGE := util.GetEnvInt("MIN_CULLING_AGE")
 	if in.MaxAge < uint64(MIN_CULLING_AGE) {
+		logging.ClientError(ls, "max age too small")
 		return &pb.CullListingsResponse{}, status.Error(codes.InvalidArgument, fmt.Sprintf("cannot cull listings under minimum culling age of %d seconds", MIN_CULLING_AGE))
 	}
 
 	// something else that is also disasterous
-	response, err := s.server.databaseInstance.CullListings(in.MaxAge)
+	numDeleted, err := s.server.databaseInstance.CullListings(in.MaxAge)
 	if err != nil {
-		//TODO logging
+		logging.InternalError(ls, err)
 		return &pb.CullListingsResponse{}, status.Error(codes.Internal, INTERNAL_SERVER_ERROR)
 	}
 
-	return &pb.CullListingsResponse{NumDeleted: response}, nil
+	logging.InfoTail(ls, fmt.Sprintf("culled %d listing(s)", numDeleted))
+	return &pb.CullListingsResponse{NumDeleted: numDeleted}, nil
 }
 
 func (s listingsDatabaseServer) RetrieveListings(in *pb.RetrieveListingsRequest, stream pb.ListingsDatabase_RetrieveListingsServer) error {
+	ls := logging.Info(RETRIEVE_LISTING, stream.Context(), fmt.Sprintf("retrieving posts of age <=%d seconds", in.MaxAge))
+
 	out := make(chan *pb.RedditContent)
 	outErr := make(chan error, 1)
 
 	go s.server.databaseInstance.RetrieveListings(in.MaxAge, out, outErr)
 
+	sentListings := 0
 	for listing := range out {
 		err := stream.Send(listing)
 		if err != nil {
-			// TODO: logging
-			log.Printf("warning: error sending listing to client: %s", err)
+			logging.ClientWarning(ls, fmt.Sprintf("unable to send listing: %s", err))
+		} else {
+			sentListings += 1
 		}
 	}
 
 	// return the above RetrieveListings call's output
 	if err := <-outErr; err != nil {
-		// TODO: logging
-		return errors.New(INTERNAL_SERVER_ERROR)
+		logging.InternalError(ls, err)
+		return status.Error(codes.Internal, INTERNAL_SERVER_ERROR)
 	}
 
+	logging.InfoTail(ls, fmt.Sprintf("streamed %d listing(s)", sentListings))
 	return nil
 }
 
 func (s listingsDatabaseServer) SaveListings(stream pb.ListingsDatabase_SaveListingsServer) error {
+	var ls logging.LogStruct
+
 	// get the # of listings the client will send
 	numListings, err := extractNumListings(stream)
 	if err != nil {
+		ls = logging.Info(SAVE_LISTINGS, stream.Context(), "saving n/a listings")
+		logging.ClientError(ls, fmt.Sprintf("no %s header", NUM_LISTINGS_HEADER))
 		return err
+	} else {
+		ls = logging.Info(SAVE_LISTINGS, stream.Context(), fmt.Sprintf("saving %d listing(s)", numListings))
 	}
 
 	in := make(chan *pb.RedditContent)
@@ -153,6 +184,7 @@ func (s listingsDatabaseServer) SaveListings(stream pb.ListingsDatabase_SaveList
 	errChanInternal := make(chan error, 1)
 	go s.server.databaseInstance.SaveListings(numListings, in, errChan, errChanInternal)
 
+	listingsCount := 0
 	for {
 		listing, err := stream.Recv()
 		if err == io.EOF {
@@ -161,12 +193,12 @@ func (s listingsDatabaseServer) SaveListings(stream pb.ListingsDatabase_SaveList
 		}
 
 		if err != nil {
-			// TODO: logging
-			log.Printf("SaveListings warning: error recieving listing: %s", err)
+			logging.ClientWarning(ls, fmt.Sprintf("cannot recieve listing: %s", err))
 			break
 		}
 
 		in <- listing
+		listingsCount += 1
 	}
 	close(in)
 
@@ -174,24 +206,40 @@ func (s listingsDatabaseServer) SaveListings(stream pb.ListingsDatabase_SaveList
 	select {
 	case err := <-errChan: // regular client-side error
 		if err != nil {
+			logging.ClientError(ls, fmt.Sprintf("%s", err))
 			return status.Error(codes.InvalidArgument, err.Error())
 		}
 	case err := <-errChanInternal: // internal server error
 		if err != nil {
-			// TODO: logging
-			log.Printf("SaveListings error: %s", err)
+			logging.InternalError(ls, err)
 			return status.Error(codes.Internal, INTERNAL_SERVER_ERROR)
 		}
 	}
 
+	/*
+		listings sent into database.SaveListings via the in channel are not
+		garanteed to be saved in the database (assuming they can be invalid).
+		Therefore I can only say "at most _ listings." I could improve this
+		by adding another dedicated channel to database.SaveListings to return
+		numInserted but it's already cluttered enough with input channels
+
+		TODO: redesign database.SaveListings input + output params
+	*/
+	logging.InfoTail(ls, fmt.Sprintf("saved at most %d listings", listingsCount))
 	return stream.SendAndClose(&pb.SaveListingsResponse{})
 }
 
 func (s listingsDatabaseServer) UpdateListings(stream pb.ListingsDatabase_UpdateListingsServer) error {
+	var ls logging.LogStruct
+
 	// get the # of listings the client will send
 	numListings, err := extractNumListings(stream)
 	if err != nil {
+		ls = logging.Info(UPDATE_LISTINGS, stream.Context(), "updating n/a listings")
+		logging.ClientError(ls, fmt.Sprintf("no %s header", NUM_LISTINGS_HEADER))
 		return err
+	} else {
+		ls = logging.Info(UPDATE_LISTINGS, stream.Context(), fmt.Sprintf("updating %d listings", numListings))
 	}
 
 	in := make(chan *pb.RedditContent)
@@ -199,6 +247,7 @@ func (s listingsDatabaseServer) UpdateListings(stream pb.ListingsDatabase_Update
 	errChanInternal := make(chan error, 1)
 	go s.server.databaseInstance.UpdateListings(numListings, in, errChan, errChanInternal)
 
+	listingsCount := 0
 	for {
 		listing, err := stream.Recv()
 		if err == io.EOF {
@@ -207,12 +256,12 @@ func (s listingsDatabaseServer) UpdateListings(stream pb.ListingsDatabase_Update
 		}
 
 		if err != nil {
-			// TODO: logging
-			log.Printf("UpdateListings warning: error recieving listing: %s", err)
+			logging.ClientWarning(ls, fmt.Sprintf("cannot recieve listing: %s", err))
 			break
 		}
 
 		in <- listing
+		listingsCount += 1
 	}
 	close(in)
 
@@ -220,16 +269,22 @@ func (s listingsDatabaseServer) UpdateListings(stream pb.ListingsDatabase_Update
 	select {
 	case err := <-errChan: // regular client-side error
 		if err != nil {
+			logging.ClientError(ls, fmt.Sprintf("%s", err))
 			return status.Error(codes.InvalidArgument, err.Error())
 		}
 	case err := <-errChanInternal: // internal server error
 		if err != nil {
-			// TODO: logging
-			log.Printf("UpdateListings error: %s", err)
+			logging.InternalError(ls, err)
 			return status.Error(codes.Internal, INTERNAL_SERVER_ERROR)
 		}
 	}
 
+	/*
+		see the InfoTail call in SaveListings...  same issue here
+
+		TODO: redesign database.UpdateListingsResponse input + output params
+	*/
+	logging.InfoTail(ls, fmt.Sprintf("updated at most %d listings", listingsCount))
 	return stream.SendAndClose(&pb.UpdateListingsResponse{})
 }
 

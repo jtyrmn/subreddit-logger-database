@@ -92,7 +92,7 @@ func RedditContentToBson(r pb.RedditContent) BsonStruct {
 		}
 	}
 	return BsonStruct{
-		ID: r.MetaData.ContentType + "_" + r.Id,
+		ID: r.Id,
 		Listing: bsonStructMetadata{
 			Contenttype: r.MetaData.ContentType,
 			Id:          r.MetaData.Id,

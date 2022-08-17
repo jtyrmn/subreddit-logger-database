@@ -34,8 +34,8 @@ func IsValidForDatabase(rc *pb.RedditContent) error {
 		return errors.New("invalid metadata ID")
 	}
 
-	if rc.Id != rc.MetaData.ContentType + "_" + rc.MetaData.Id {
-		return errors.New("ID and metadata ID don't match")
+	if rc.Id != rc.MetaData.ContentType+"_"+rc.MetaData.Id {
+		return errors.New("ID and metadata ID are unfamiliar")
 	}
 
 	return nil
