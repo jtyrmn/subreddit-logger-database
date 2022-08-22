@@ -81,7 +81,7 @@ func (s listingsDatabaseServer) ManyListings(ctx context.Context, in *pb.ManyLis
 		return &pb.ManyListingsResponse{}, status.Error(codes.Internal, INTERNAL_SERVER_ERROR)
 	}
 
-	logging.InfoTail(ls, fmt.Sprintf("returning %s listings", len(listings)))
+	logging.InfoTail(ls, fmt.Sprintf("returning %d listings", len(listings)))
 	return &pb.ManyListingsResponse{Listings: listings}, err
 }
 
