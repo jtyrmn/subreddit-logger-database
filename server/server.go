@@ -96,7 +96,7 @@ func (s listingsDatabaseServer) FetchListing(ctx context.Context, in *pb.FetchLi
 		know it will never return anything from the database, therefore we don't
 		need to bother with querying the database
 	*/
-	if !util.IsValidID(in.Id) {
+	if !util.IsValidFullID(in.Id) {
 		// should the status code be NotFound or InvalidArgument? Hmmm
 		logging.ClientError(ls, notFound.Error())
 		return &pb.RedditContent{}, notFound
