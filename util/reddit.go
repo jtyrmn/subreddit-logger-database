@@ -10,13 +10,13 @@ import (
 // the listings in the database must store IDs in the form of t-_------, or
 // regex ^t[1-6]_[a-z0-9]{6}$
 func IsValidFullID(ID string) bool {
-	result, _ := regexp.MatchString("^t[1-6]_[a-z0-9]{6}$", ID)
+	result, _ := regexp.MatchString("^t[1-6]_[a-z0-9]{7}$", ID)
 	return result
 }
 
 // for IDs without the t3_-esque prefix
 func IsValidID(ID string) bool {
-	result, _ := regexp.MatchString("^[a-z0-9]{6}$", ID)
+	result, _ := regexp.MatchString("^[a-z0-9]{7}$", ID)
 	return result
 }
 
